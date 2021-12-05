@@ -6,6 +6,9 @@ use App\Models\Test;
 use App\Http\Requests\StoreTestRequest;
 use App\Http\Requests\UpdateTestRequest;
 use Illuminate\Support\Facades\Storage;
+use Intervention\Image\ImageManagerStatic as Image;
+use Intervention\Image\ImageManager;
+use Intervention\Image\ImageManagerStatic;
 
 
 
@@ -20,7 +23,9 @@ class TestController extends Controller
     {
         $tests = Test::orderBy('id', 'desc')->paginate(15);
         return view('index', compact('tests'));
+
     }
+
 
     /**
      * Show the form for creating a new resource.
@@ -43,11 +48,28 @@ class TestController extends Controller
         $request->validate([
             'title' => 'required',
             'image' => 'required|image|mimes:jpg,png,jpeg,gif,svg|max:2048',
+            'width'=>'required|int|min:50|max:300',
+            'height'=>'required|int|min:50|max:300',
         ]);
-        $path = $request->file('image')->store('public/images');
         $post = new Test();
         $post->title = $request->title;
-        $post->image = $path;
+        $post->width= $request->width;
+        $post->height = $request->height;
+
+
+
+        $path = $request->file('image')->store('uploads2');
+
+
+        $path = storage_path() . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $path);
+//
+//        dd($path);
+        $img = Image::make($path);
+            $img->resize($post->width,$post->height)->save();
+        dd($img);
+
+        $post->image = $img;
+
         $post->save();
 
         return redirect()->route('tests.index')
@@ -120,6 +142,38 @@ class TestController extends Controller
         }
         return redirect()->route('tests.index')
             ->with('success', 'test has been deleted successfully');
+    }
+
+    protected function download($width, $height, $fileName)
+    {
+        $image_path = storage_path('public/storage/images/' . $fileName);
+        !file_exists($image_path) && abort(403);
+
+        $image = \Intervention\Image\ImageManagerStatic::make($image_path);
+        $original_width = $image->width();
+        $original_height = $image->height();
+
+        $original_ratio = $original_width / $original_height;
+        $request_ratio = $width / $height;
+
+        if ($request_ratio < $original_ratio) {
+            $new_width = (int)($original_height * $request_ratio);
+            $image->resizeCanvas($new_width, null);
+        } else {
+            $new_height = (int)($original_width / $request_ratio);
+            $image->resizeCanvas(null, $new_height);
+        }
+
+        $original_image = resize($width, $height, function ($constraint) {
+            $constraint->aspectRatio();
+            $constraint->upsize();
+        });
+        $resized_file_path = '';
+        $resized_filename = $image . '_' . $width . 'x' . $height . '.' . 'png';
+        $original_image->save($resized_file_path);
+        !file_exists($resized_file_path) && abort(404);
+        return response()->download($resized_file_path,null,[],null);
+
     }
 
 //    public function download($width,$height , $image)
